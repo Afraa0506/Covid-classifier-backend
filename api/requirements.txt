@@ -1,0 +1,12 @@
+numpy
+pandas
+matplotlib
+opencv-python
+Pillow
+tensorflow==2.15.0
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+scikit-learn
+opencv-python-headless
