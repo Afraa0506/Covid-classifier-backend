@@ -5,8 +5,7 @@ import uvicorn
 
 app = FastAPI()
 
-# Allow React frontend
-origins = ["http://localhost:5173"]
+origins = ["https://covid-classifier-frontend.onrender.com"]  
 
 app.add_middleware(
     CORSMiddleware,
