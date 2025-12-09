@@ -19,6 +19,8 @@ if not os.path.exists(MODEL_PATH):
     print("Model download complete!")
 
 model = tf.keras.models.load_model(MODEL_PATH)
+model.build((None, 224, 224, 3))
+_ = model(tf.zeros((1, 224, 224, 3)))  
 
 CLASS_NAMES = ["Covid", "Normal", "Viral Pneumonia"]
 
@@ -35,7 +37,7 @@ def get_last_conv_layer(model):
     for layer in reversed(model.layers):
         if isinstance(layer, tf.keras.layers.Conv2D):
             return layer.name
-    raise ValueError("No Conv2D layer found in the model")
+    raise ValueError("No Conv2D layer found")
 
 
 def gradcam(image_bytes):
