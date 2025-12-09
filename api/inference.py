@@ -5,7 +5,7 @@ from io import BytesIO
 import cv2
 import base64
 
-MODEL_PATH = "C:/Users/DELL/OneDrive/Desktop/Afraa/Freelance/MLE/3.Image_classification/model/covid_model.h5"
+MODEL_PATH = "model/covid_model.h5"
 model = tf.keras.models.load_model(MODEL_PATH)
 CLASS_NAMES = ["Covid", "Normal", "Viral Pneumonia"]
 
