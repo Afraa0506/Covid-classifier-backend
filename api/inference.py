@@ -20,7 +20,7 @@ if not os.path.exists(MODEL_PATH):
 
 model = tf.keras.models.load_model(MODEL_PATH)
 model.build((None, 224, 224, 3))
-_ = model(tf.zeros((1, 224, 224, 3)))  
+model.predict(np.zeros((1, 224, 224, 3)))
 
 CLASS_NAMES = ["Covid", "Normal", "Viral Pneumonia"]
 
@@ -45,8 +45,8 @@ def gradcam(image_bytes):
     last_conv_name = get_last_conv_layer(model)
 
     grad_model = tf.keras.models.Model(
-        [model.inputs],
-        [model.get_layer(last_conv_name).output, model.output]
+    inputs=model.input,
+    outputs=[model.get_layer(last_conv_name).output, model.output]
     )
 
     with tf.GradientTape() as tape:
