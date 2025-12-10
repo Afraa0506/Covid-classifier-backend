@@ -13,19 +13,25 @@ MODEL_URL = "https://drive.google.com/uc?export=download&id=1HbSuKd0Lij3ptqkRNAx
 
 os.makedirs(MODEL_DIR, exist_ok=True)
 
-# Download model if missing
+
 if not os.path.exists(MODEL_PATH):
-    print("Model not found! Downloading model from Google Drive...")
+    print("Downloading model...")
     gdown.download(MODEL_URL, MODEL_PATH, quiet=False)
-    print("Model download complete!")
+    print("Model downloaded.")
 
-# Load the model
-model = tf.keras.models.load_model(MODEL_PATH)
 
-# IMPORTANT FIX — warmup call to define model.input
+raw_model = tf.keras.models.load_model(MODEL_PATH)
+
+
+input_layer = tf.keras.Input(shape=(224, 224, 3))
+output_layer = raw_model(input_layer)
+model = tf.keras.Model(inputs=input_layer, outputs=output_layer)
+
+
 _ = model.predict(np.zeros((1, 224, 224, 3)))
 
 CLASS_NAMES = ["Covid", "Normal", "Viral Pneumonia"]
+
 
 
 def preprocess_image(image_bytes):
@@ -35,11 +41,13 @@ def preprocess_image(image_bytes):
     return np.expand_dims(img_array, axis=0)
 
 
+
 def get_last_conv_layer(model):
     for layer in reversed(model.layers):
         if isinstance(layer, tf.keras.layers.Conv2D):
             return layer.name
-    raise ValueError("No Conv2D layer found in model")
+    raise ValueError("NO conv2d layer found")
+
 
 
 def gradcam(image_bytes):
@@ -74,10 +82,11 @@ def gradcam(image_bytes):
         cv2.COLOR_RGB2BGR
     )
 
-    superimposed = cv2.addWeighted(original, 0.6, heatmap, 0.4, 0)
-    _, buffer = cv2.imencode(".png", superimposed)
+    final = cv2.addWeighted(original, 0.6, heatmap, 0.4, 0)
+    _, buffer = cv2.imencode(".png", final)
 
     return base64.b64encode(buffer).decode("utf-8")
+
 
 
 def predict_image(file_bytes):
@@ -85,7 +94,7 @@ def predict_image(file_bytes):
     preds = model.predict(img_array)
 
     class_index = np.argmax(preds[0])
-    confidence = round(float(preds[0][class_index]) * 100, 2)
+    confidence = float(preds[0][class_index]) * 100
 
     all_probs = {
         CLASS_NAMES[i]: round(float(preds[0][i]) * 100, 2)
@@ -96,7 +105,7 @@ def predict_image(file_bytes):
 
     return {
         "prediction": CLASS_NAMES[class_index],
-        "confidence": confidence,
+        "confidence": round(confidence, 2),
         "all_probs": all_probs,
         "gradcam": heatmap
     }
