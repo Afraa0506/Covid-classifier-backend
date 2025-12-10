@@ -2,10 +2,10 @@ import numpy as np
 import tensorflow as tf
 from PIL import Image
 from io import BytesIO
-import cv2
 import base64
 import os
 import gdown
+import cv2
 
 MODEL_PATH = "model/covid_model.h5"
 MODEL_DIR = "model"
@@ -32,8 +32,6 @@ _ = model.predict(np.zeros((1, 224, 224, 3)))
 
 CLASS_NAMES = ["Covid", "Normal", "Viral Pneumonia"]
 
-
-
 def preprocess_image(image_bytes):
     img = Image.open(BytesIO(image_bytes)).convert("RGB")
     img = img.resize((224, 224))
@@ -41,18 +39,23 @@ def preprocess_image(image_bytes):
     return np.expand_dims(img_array, axis=0)
 
 
-
-def get_last_conv_layer(model):
-    for layer in reversed(model.layers):
+def has_conv2d(model):
+    for layer in model.layers:
         if isinstance(layer, tf.keras.layers.Conv2D):
-            return layer.name
-    raise ValueError("NO conv2d layer found")
-
-
+            return True
+    return False
 
 def gradcam(image_bytes):
+    """Return GradCAM heatmap if Conv2D exists, else return empty string."""
+    if not has_conv2d(model):
+        return ""  # skip if no Conv2D layer
+
     img = preprocess_image(image_bytes)
-    last_conv = get_last_conv_layer(model)
+    last_conv = None
+    for layer in reversed(model.layers):
+        if isinstance(layer, tf.keras.layers.Conv2D):
+            last_conv = layer.name
+            break
 
     grad_model = tf.keras.Model(
         inputs=model.input,
@@ -69,11 +72,10 @@ def gradcam(image_bytes):
 
     conv_outputs = conv_outputs[0]
     heatmap = tf.reduce_sum(conv_outputs * pooled_grads, axis=-1)
-
     heatmap = np.maximum(heatmap, 0)
     heatmap /= (heatmap.max() + 1e-8)
 
-    heatmap = cv2.resize(heatmap, (224, 224))
+    heatmap = cv2.resize(heatmap.numpy(), (224, 224))
     heatmap = np.uint8(255 * heatmap)
     heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
 
@@ -84,10 +86,7 @@ def gradcam(image_bytes):
 
     final = cv2.addWeighted(original, 0.6, heatmap, 0.4, 0)
     _, buffer = cv2.imencode(".png", final)
-
     return base64.b64encode(buffer).decode("utf-8")
-
-
 
 def predict_image(file_bytes):
     img_array = preprocess_image(file_bytes)
@@ -101,6 +100,7 @@ def predict_image(file_bytes):
         for i in range(len(CLASS_NAMES))
     }
 
+    # GradCAM only if Conv2D exists
     heatmap = gradcam(file_bytes)
 
     return {
