@@ -9,58 +9,44 @@ import gdown
 
 MODEL_PATH = "model/covid_model.h5"
 MODEL_DIR = "model"
+MODEL_URL = "https://drive.google.com/uc?export=download&id=1HbSuKd0Lij3ptqkRNAxQQfT_ONKodEth"
 
-# Use confirm=t to bypass large file restrictions
-FILE_ID = "1HbSuKd0Lij3ptqkRNAxQQfT_ONKodEth"
-MODEL_URL = f"https://drive.google.com/uc?id={FILE_ID}&confirm=t"
-
-# Ensure model folder exists
 os.makedirs(MODEL_DIR, exist_ok=True)
 
-# Download model if not present
+# Download model if missing
 if not os.path.exists(MODEL_PATH):
-    print("Model not found! Downloading from Google Drive...")
-    try:
-        gdown.download(MODEL_URL, MODEL_PATH, quiet=False)
-        print("Model download complete!")
-    except Exception as e:
-        print(f"ERROR DOWNLOADING MODEL: {e}")
-        raise RuntimeError("Model download failed.")
+    print("Model not found! Downloading model from Google Drive...")
+    gdown.download(MODEL_URL, MODEL_PATH, quiet=False)
+    print("Model download complete!")
 
-# Load model safely
-print("Loading model...")
+# Load the model
 model = tf.keras.models.load_model(MODEL_PATH)
-model.build(input_shape=(None, 224, 224, 3))
 
-# Warm-up prediction to avoid "model never called" error
+# IMPORTANT FIX — warmup call to define model.input
 _ = model.predict(np.zeros((1, 224, 224, 3)))
-print("Model loaded successfully!")
 
 CLASS_NAMES = ["Covid", "Normal", "Viral Pneumonia"]
 
 
-# Preprocessing function
 def preprocess_image(image_bytes):
     img = Image.open(BytesIO(image_bytes)).convert("RGB")
     img = img.resize((224, 224))
-    img_array = np.array(img) / 255.0
-    img_array = np.expand_dims(img_array, axis=0)
-    return img_array
+    img_array = np.array(img, dtype=np.float32) / 255.0
+    return np.expand_dims(img_array, axis=0)
 
 
-# Grad-CAM utilities
 def get_last_conv_layer(model):
     for layer in reversed(model.layers):
         if isinstance(layer, tf.keras.layers.Conv2D):
             return layer.name
-    raise ValueError("No Conv2D layer found for Grad-CAM.")
+    raise ValueError("No Conv2D layer found in model")
 
 
 def gradcam(image_bytes):
     img = preprocess_image(image_bytes)
     last_conv = get_last_conv_layer(model)
 
-    grad_model = tf.keras.models.Model(
+    grad_model = tf.keras.Model(
         inputs=model.input,
         outputs=[model.get_layer(last_conv).output, model.output]
     )
@@ -71,19 +57,13 @@ def gradcam(image_bytes):
         loss = predictions[:, class_idx]
 
     grads = tape.gradient(loss, conv_outputs)
+    pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
 
-    # Handle shapes for different model architectures
-    if len(conv_outputs.shape) == 4:
-        conv_outputs = conv_outputs[0]
-        pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
-    else:
-        conv_outputs = conv_outputs[0]
-        pooled_grads = tf.reduce_mean(grads, axis=0)
+    conv_outputs = conv_outputs[0]
+    heatmap = tf.reduce_sum(conv_outputs * pooled_grads, axis=-1)
 
-    heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
-    heatmap = tf.squeeze(heatmap)
-    heatmap = tf.maximum(heatmap, 0) / tf.math.reduce_max(heatmap)
-    heatmap = heatmap.numpy()
+    heatmap = np.maximum(heatmap, 0)
+    heatmap /= (heatmap.max() + 1e-8)
 
     heatmap = cv2.resize(heatmap, (224, 224))
     heatmap = np.uint8(255 * heatmap)
@@ -100,12 +80,11 @@ def gradcam(image_bytes):
     return base64.b64encode(buffer).decode("utf-8")
 
 
-# Prediction API
 def predict_image(file_bytes):
     img_array = preprocess_image(file_bytes)
     preds = model.predict(img_array)
 
-    class_index = int(np.argmax(preds[0]))
+    class_index = np.argmax(preds[0])
     confidence = round(float(preds[0][class_index]) * 100, 2)
 
     all_probs = {
